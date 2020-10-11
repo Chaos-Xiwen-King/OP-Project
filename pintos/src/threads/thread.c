@@ -237,7 +237,11 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
+  /*
   list_push_back (&ready_list, &t->elem);
+  */
+  list_insert_ordered(&ready_list, &t->elem, (list_less_func *) &thread_priority_cmp, NULL);
+
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -307,8 +311,13 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread)
+    list_insert_ordered (&ready_list, &cur->elem, (list_less_func *) &thread_priority_cmp, NULL);
+
+  /*
+  list_push_back (&ready_list, &cur->elem);
+  */
+
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -466,7 +475,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->blocked_ticks = 0;
 
   old_level = intr_disable ();
+  /*
   list_push_back (&all_list, &t->allelem);
+  */
+  list_insert_ordered (&all_list, &t->allelem, (list_less_func *) &thread_priority_cmp, NULL);
+
   intr_set_level (old_level);
 }
 
@@ -590,6 +603,13 @@ blocked_time_check (struct thread *t)
       if (t->blocked_ticks == 0)
         thread_unblock(t);
     }
+}
+
+/* Compare the priority between two threads. */
+bool
+thread_priority_cmp (const struct list_elem *a, const struct list_elem *b)
+{
+  return list_entry (a, struct thread, elem)->priority > list_entry (b, struct thread, elem)->priority;
 }
 
 /* Offset of `stack' member within `struct thread'.
