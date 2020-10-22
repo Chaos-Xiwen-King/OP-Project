@@ -87,12 +87,16 @@ struct thread
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Priority. */
+    int priority;                       /* Actual priority. */
     struct list_elem allelem;           /* List element for all threads list. */
     int64_t blocked_ticks;              /* Number of ticks thread blocks */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+
+    int init_priority;               /* Priority when first being created. */
+    struct list locks;                  /* Locks holden by thread. */
+    struct lock *lock_waiting;          /* Lock that the thread is waiting for. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -142,5 +146,9 @@ int thread_get_load_avg (void);
 void blocked_time_check (struct thread *t);
 
 bool thread_priority_cmp (const struct list_elem *a, const struct list_elem *b);
+void thread_donate_priority (struct thread *t);
+void thread_update_priority (struct thread *t);
+void thread_lock_hold (struct lock *lock);
+void thread_remove_lock (struct lock *lock);
 
 #endif /* threads/thread.h */

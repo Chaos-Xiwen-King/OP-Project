@@ -153,3 +153,40 @@ ps:
 
 线程转换： schedule() 函数调用 switch_threads() 函数决定下一个运行的线程，并将前一个运行的线程状态改变，再调用 thread_schedule_tail() 标记新线程的状态。
 
+
+
+#### 第一次上机
+
+优先级翻转问题：
+
+```c
+priority-donate-one: 多个线程等待一把锁，一个线程持有该锁，要记录等待在一个锁上的所有线程以及当前这个锁的持有者。
+	高优先级线程等待低优先级线程的锁时，高优先级线程捐献自己的优先级给低优先级线程；若有多个，则捐献至最高优先级
+ 
+priority-donte-multiple: 多个线程等待多把锁，一个线程持有所有的锁，要记录线程持有的所有的锁
+  与上相比，原线程的优先级会多次变化。
+  
+priority-donate-multiple2: 同上
+
+priority-donate-nest: 优先级嵌套问题，优先级提升具有连环效应，线程优先级被提升了，它被锁捆绑的线程应该跟着一起提升，要记录它等待的锁的持有线程
+  
+priority-donate-sema:
+priority-donate-lower: 修改被锁线程的优先级时的正确性
+  
+  
+
+priority-sema: 信号量的等待队列是优先级队列。
+priority-condvar: 条件变量的等待队列是优先级队列
+priority-donate-chain: 
+
+总结：
+  就是要解决伴随着锁的获得与释放过程中发生的优先级改变问题：
+  lock_acquire() 
+  lock_release()
+  
+ps: 本质上锁的实现还是依赖于信号量
+```
+
+
+
+Question: list 数据结构是如何实现的？list_entry 函数详解？
