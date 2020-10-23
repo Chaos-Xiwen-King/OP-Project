@@ -183,7 +183,20 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  enum intr_level old_level = intr_disable ();
+
+  if (thread_mlfqs)
+  {
+    thread_recent_cpu_increase ();
+    if (ticks % TIMER_FREQ == 0)
+      thread_load_avg_recent_cpu_update ();
+    else if (ticks % 4 == 0)
+      thread_mlfqs_priority_update (thread_current ());
+  }
+
   thread_foreach(blocked_time_check, NULL);
+
+  intr_set_level (old_level);
   thread_tick ();
 }
 
