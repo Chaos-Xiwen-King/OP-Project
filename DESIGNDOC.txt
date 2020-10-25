@@ -55,36 +55,226 @@ FirstName LastName <email@domain.example>
              ===================
 
 ---- DATA STRUCTURES ----
+修改thread数据结构，加入以下数据：
+int base_priority
+struct list locks
+struct lock *lock_waiting
+修改lock数据结构，加入以下数据：
+struct list_elem elem
+int max_priority
 
->> B1: Copy here the declaration of each new or changed `struct' or
->> `struct' member, global or static variable, `typedef', or
->> enumeration.  Identify the purpose of each in 25 words or less.
+>>thread中，base_priority记录的是创建线程开始时的优先级，而priority记录的是目前线程所拥有的优先级。priority可能会随着程序的运行而发生改变，但base_priority是不发生改变的。locks记录的是目前为止该线程拥有的锁，lock_waiting表述的是该线程正在等待的锁。
+>>lock数据结构中elem表述的是对于给锁提供优先级的全部线程，max_priority指的是得到这个锁的所有线程中的最高级。
 
->> B2: Explain the data structure used to track priority donation.
->> Use ASCII art to diagram a nested donation.  (Alternately, submit a
->> .png file.)
 
 ---- ALGORITHMS ----
+>>对于等待锁，信号量，condition的队列全部实现为优先队列
 
->> B3: How do you ensure that the highest priority thread waiting for
->> a lock, semaphore, or condition variable wakes up first?
+锁队列排序函数lock_cmp_priority：
+2 bool
+3 lock_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+4 {
+5   return list_entry (a, struct lock, elem)->max_priority > list_entry (b, struct lock, elem)->max_priority;
+6 }
 
->> B4: Describe the sequence of events when a call to lock_acquire()
->> causes a priority donation.  How is nested donation handled?
+对于实现condition的优先队列，首先修改cond_signal函数：
+void
+cond_signal (struct condition *cond, struct lock *lock UNUSED)
+{
+  ASSERT (cond != NULL);
+  ASSERT (lock != NULL);
+  ASSERT (!intr_context ());
+  ASSERT (lock_held_by_current_thread (lock));
 
->> B5: Describe the sequence of events when lock_release() is called
->> on a lock that a higher-priority thread is waiting for.
+  if (!list_empty (&cond->waiters))
+  {
+    list_sort (&cond->waiters, cond_sema_cmp_priority, NULL);
+    sema_up (&list_entry (list_pop_front (&cond->waiters), struct semaphore_elem, elem)->semaphore);
+  }
+}
+写出比较函数cond_sema_cmp_priority：
+bool
+cond_sema_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct semaphore_elem *sa = list_entry (a, struct semaphore_elem, elem);
+  struct semaphore_elem *sb = list_entry (b, struct semaphore_elem, elem);
+  return list_entry(list_front(&sa->semaphore.waiters), struct thread, elem)->priority > list_entry(list_front(&sb->semaphore.waiters), struct thread, elem)->priority;
+}
+
+实现信号量的等待队列为优先级队列，修改函数sema_up：
+void
+sema_up (struct semaphore *sema)
+{
+  enum intr_level old_level;
+
+  ASSERT (sema != NULL);
+
+  old_level = intr_disable ();
+  if (!list_empty (&sema->waiters))
+  {
+    list_sort (&sema->waiters, thread_cmp_priority, NULL);
+    thread_unblock (list_entry (list_pop_front (&sema->waiters), struct thread, elem));
+  }
+
+  sema->value++;
+  thread_yield ();
+  intr_set_level (old_level);
+}
+修改sema_down：
+void
+sema_down (struct semaphore *sema)
+{
+  enum intr_level old_level;
+
+  ASSERT (sema != NULL);
+  ASSERT (!intr_context ());
+
+  old_level = intr_disable ();
+  while (sema->value == 0)
+    {
+      list_insert_ordered (&sema->waiters, &thread_current ()->elem, thread_cmp_priority, NULL);
+      thread_block ();
+    }
+  sema->value--;
+  intr_set_level (old_level);
+}
+
+>>修改lock_acquire函数：
+void
+lock_acquire (struct lock *lock)
+{
+  struct thread *current_thread = thread_current ();
+  struct lock *l;
+  enum intr_level old_level;
+
+  ASSERT (lock != NULL);
+  ASSERT (!intr_context ());
+  ASSERT (!lock_held_by_current_thread (lock));
+
+  if (lock->holder != NULL && !thread_mlfqs)
+  {
+    current_thread->lock_waiting = lock;
+    l = lock;
+    while (l && current_thread->priority > l->max_priority)
+    {
+      l->max_priority = current_thread->priority;
+      thread_donate_priority (l->holder);
+      l = l->holder->lock_waiting;
+    }
+  }
+
+  sema_down (&lock->semaphore);
+
+  old_level = intr_disable ();
+
+  current_thread = thread_current ();
+  if (!thread_mlfqs)
+  {
+    current_thread->lock_waiting = NULL;
+    lock->max_priority = current_thread->priority;
+    thread_hold_the_lock (lock);
+  }
+  lock->holder = current_thread;
+
+  intr_set_level (old_level);
+}
+当调用lock_acquire函数时，当前线程等待的锁设置为该锁，如果拥有这个锁的线程优先级比自己低就提高锁的优先级，并且如果这个锁还被其他锁锁着，将会递归捐赠优先级，直到该线程放掉这个锁，恢复到捐赠前的优先级，即while循环里的内容。之后就是让该线程拥有该锁。
+函数thread_donate_priority的作用是将线程优先级捐赠给锁：
+/* Donate current priority to thread t. */
+void
+thread_donate_priority (struct thread *t)
+{
+  enum intr_level old_level = intr_disable ();
+  thread_update_priority (t);
+
+  if (t->status == THREAD_READY)
+  {
+    list_remove (&t->elem);
+    list_insert_ordered (&ready_list, &t->elem, thread_cmp_priority, NULL);
+  }
+  intr_set_level (old_level);
+}
+其中的函数thread_update_priority的作用是更新线程的优先级：
+void
+thread_update_priority (struct thread *t)
+{
+  enum intr_level old_level = intr_disable ();
+  int max_priority = t->base_priority;
+  int lock_priority;
+
+  if (!list_empty (&t->locks))
+  {
+    list_sort (&t->locks, lock_cmp_priority, NULL);
+    lock_priority = list_entry (list_front (&t->locks), struct lock, elem)->max_priority;
+    if (lock_priority > max_priority)
+      max_priority = lock_priority;
+  }
+
+  t->priority = max_priority;
+  intr_set_level (old_level);
+}
+当这个线程处于被捐赠的状态时，对lock_priority进行设置，如果lock_priority大于目前的优先级，则priority设置为lock_priority，否则，线程优先级为本身的优先级。
+thread_hold_the_lock函数作用是插入当前线程进入优先队列，并设置当前线程的优先级，即让线程拥有该锁：
+void
+thread_hold_the_lock(struct lock *lock)
+{
+  enum intr_level old_level = intr_disable ();
+  list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_cmp_priority, NULL);
+
+  if (lock->max_priority > thread_current ()->priority)
+  {
+    thread_current ()->priority = lock->max_priority;
+    thread_yield ();
+  }
+
+  intr_set_level (old_level);
+}
+
+>>在lock_release函数中加入语句：
+if (!thread_mlfqs)
+  thread_remove_lock(lock);
+其中thread_remove_lock函数如下：
+void
+thread_remove_lock (struct lock *lock)
+{
+  enum intr_level old_level = intr_disable ();
+  list_remove (&lock->elem);
+  thread_update_priority (thread_current ());
+  intr_set_level (old_level);
+}
+函数将线程从拥有该锁的线程队列中移出，并更新当前线程的优先级。
+当释放锁的时候如果对一个锁的优先级有所改变应考虑被捐赠的优先级和当前优先级。
+
 
 ---- SYNCHRONIZATION ----
 
->> B6: Describe a potential race in thread_set_priority() and explain
->> how your implementation avoids it.  Can you use a lock to avoid
->> this race?
+>>修改thread_set_priority函数：
+void
+thread_set_priority (int new_priority)
+{
+  if (thread_mlfqs)
+    return;
+
+  enum intr_level old_level = intr_disable ();
+
+  struct thread *current_thread = thread_current ();
+  int old_priority = current_thread->priority;
+  current_thread->base_priority = new_priority;
+
+  if (list_empty (&current_thread->locks) || new_priority > old_priority)
+  {
+    current_thread->priority = new_priority;
+    thread_yield ();
+  }
+
+  intr_set_level (old_level);
+}
+对于原先的函数，可能会出现这种情况：当前线程创建一个优先级高的线程。因为新线程优先级高，便切换到新的线程，新线程执行到changing_thread，又切换到原来的线程，原来线程执行到changing_thread也切换，如此往复。
+修改方法为在设置一个线程优先级要礼记重新考虑所有线程的执行顺序，重新安排执行顺序。
+
 
 ---- RATIONALE ----
-
->> B7: Why did you choose this design?  In what ways is it superior to
->> another design you considered?
+>>选择这样的方法是因为通过逻辑上的分析，这样做能够更有效率。通过添加数据结构成员和改变方法，能够让程序运行的更有逻辑性。
 
               ADVANCED SCHEDULER
               ==================
