@@ -290,8 +290,8 @@ thread_set_priority (int new_priority)
 ---- RATIONALE ----
 >>选择这样的方法是因为通过逻辑上的分析，这样做能够更有效率。通过添加数据结构成员和改变方法，能够让程序运行的更有逻辑性。
 
-              ADVANCED SCHEDULER
-              ==================
+ADVANCED SCHEDULER
+==================
 
 ---- DATA STRUCTURES ----
 
@@ -299,33 +299,138 @@ thread_set_priority (int new_priority)
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+struct thread中添加
+{
+	int nice;               /* Nice parameter. */
+	fixed_t recent_cpu;        /* CPU time occupied by the thread. */
+}
+根据文档内容，给每个线程一个nice参数和一个recent_cpu参数，供后续重新计算线程的优先级以实现mlfqs。
+
+在thread.c中添加变量
+fixed_t load_avg;
+同样是用于计算优先级的参数。
+
+在fixed_point.h中定义
+typedef int fixed_t;
+
+
 ---- ALGORITHMS ----
+MLFQS的主要目的是：根据不同CPU区间的特点以区分进程，将占用过多CPU时间的线程的优先级降低，以保证I/O约束和交互线程等占用CPU时间较少的线程的优先级更高，从而减少系统的平均响应时间。
+
+这里我们的BSD Scheduler的主要思路为：每过一定的时间，重新计算线程的优先级，以降低占用过多CPU时间的线程的优先级。具体做法为
+
+1、每过4个ticks( tick % 4 == 0 )，重新计算优先级，公式为
+priority  =  max_priority  - (recent_cpu/4) - nice*2
+2、每过100个ticks(tick % timer_freq == 0),通过以下公式更新recent_cpu和load_avg
+recent_cpu  = recent_cpu * (2*load_avg)/(2*load_avg+1) + nice
+load_avg = load_avg*59/60 + 1/60 *  ready_thread
+3、每个时钟周期，正在运行的线程的recent_cpu增加1
+
+thread.c中添加以下三个函数：
+
+void
+thread_recent_cpu_increase (void)
+{
+  ASSERT (thread_mlfqs);
+  ASSERT (intr_context ());
+
+  struct thread *cur = thread_current ();
+  if (cur == idle_thread)
+    return;
+  cur->recent_cpu = FP_ADD_MIX (cur->recent_cpu, 1);
+}
+
+/* refresh load_avg and recent_cpu for all threads. */
+void
+thread_load_avg_recent_cpu_update (void)
+{
+  ASSERT (thread_mlfqs);
+  ASSERT (intr_context ());
+
+  size_t ready_thread_cnt = list_size (&ready_list);
+  if (thread_current () != idle_thread)
+    ready_thread_cnt++;
+
+  load_avg = FP_ADD (FP_DIV_MIX (FP_MULT_MIX (load_avg, 59), 60), FP_DIV_MIX (FP_CONST (ready_thread_cnt), 60));
+
+  struct thread *t;
+  struct list_elem *e = list_begin (&all_list);
+
+  for (; e != list_end (&all_list); e = list_next(e))
+  {
+    t = list_entry (e, struct thread, allelem);
+    if (t != idle_thread)
+    {
+      t->recent_cpu = FP_ADD_MIX (FP_MULT (FP_DIV (FP_MULT_MIX (load_avg, 2), FP_ADD_MIX (FP_MULT_MIX (load_avg, 2), 1)), t->recent_cpu), t->nice);
+      thread_mlfqs_priority_update (t);
+    }
+  }
+}
+
+/*  */
+void
+thread_mlfqs_priority_update (struct thread *t)
+{
+  if (t == idle_thread)
+    return;
+
+  ASSERT (thread_mlfqs);
+  ASSERT (t != idle_thread);
+
+  t->priority = FP_INT_PART (FP_SUB_MIX (FP_SUB (FP_CONST (PRI_MAX), FP_DIV_MIX (t->recent_cpu, 4)), 2 * t->nice));
+  t->priority = t->priority < PRI_MIN ? PRI_MIN : t->priority;
+  t->priority = t->priority > PRI_MAX ? PRI_MAX : t->priority;
+}
+
+timer.c中的timer_interrupt中加入以下内容
+if (thread_mlfqs)
+  {
+    thread_recent_cpu_increase ();
+    if (ticks % TIMER_FREQ == 0)
+      thread_load_avg_recent_cpu_update ();
+    else if (ticks % 4 == 0)
+      thread_mlfqs_priority_update (thread_current ());
+  }
 
 >> C2: Suppose threads A, B, and C have nice values 0, 1, and 2.  Each
 >> has a recent_cpu value of 0.  Fill in the table below showing the
 >> scheduling decision and the priority and recent_cpu values for each
 >> thread after each given number of timer ticks:
 
+由于源代码中给出
+#define TIMER_FREQ 100
+这里若以TIMER_TREQ=100为例计算，recent_cpu只在最开始计算一次，后续不需要考虑recent_cpu和load_avg通过公式的更新。并且我们这里假设这64个队列均采取FCFS顺序来服务,3个线程在20个时钟周期内都不会结束。
+
+
 timer  recent_cpu    priority   thread
-ticks   A   B   C   A   B   C   to run
------  --  --  --  --  --  --   ------
- 0
- 4
- 8
-12
-16
-20
-24
-28
-32
-36
+ticks   A   B   C        A   B   C   to run
+-----   --  --  --         --  --  --   ------
+ 0       0   1   2          63  61 59	 A
+ 4       4   1   2          62  61 59    A
+ 8       8   1   2          61  61 59    B
+12      8   5   2          61  60 59    A
+16     12  5   2          60  60 59    B
+20     12  9   2          60  59 59    A
+24     16  9   2          59  59  59   C
+28     16  9   6          59  59 58    B
+32     16  13  6         59  58 58    A
+36     20  13  6         58  58 58    C
 
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
 
+recent_cpu是不准确的。
+可以认为，线程运行时间的一个基本单位是4个时钟周期，因为在线程运行的四个时钟周期中，CPU需要进行调度信息的处理，即recent_cpu和load_avg以及priority的计算，
+这就导致一个线程在4个时钟周期中，实际占有CPU的时间是小于4个周期的。
+处理方式：粗略认为线程的运行时间为4个时钟周期。
+
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
+
+如果一个线程实际占有CPU的时间较短，此时，调度信息的处理，即recent_cpu和load_avg以及priority的计算，所占用CPU的时间，就会很大程度上影响此线程的占有CPU
+的时间，进而会被降低优先级。
+所以如果调度的占用的时间过长，就会导致系统效率的降低。
 
 ---- RATIONALE ----
 
@@ -334,12 +439,21 @@ ticks   A   B   C   A   B   C   to run
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
 
+设计中，没有真正实现64个队列，只是维护了一个readylist的优先队列，通过降低占有CPU时间过长的线程的优先级来控制线程的运行顺序。
+这样做实现起来更简便，但线程的调度所需的时间为O(n)，若实现64个队列，则线程的调度所需时间仅为O(1)
+
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
 >> decide to implement it the way you did?  If you created an
 >> abstraction layer for fixed-point math, that is, an abstract data
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
+
+我们在fixed_point.h中定义了一系列的宏来实现浮点数运算。
+原因有以下几点：
+1、recent_cpu和load_avg的运算需要浮点数运算来实现。
+2、比起函数，使用宏定义更加简明。
+3、所需功能较为简单，宏定义可以实现。
 
                SURVEY QUESTIONS
                ================
