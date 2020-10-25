@@ -8,7 +8,7 @@
 
 >> Fill in the names and email addresses of your group members.
 
-FirstName LastName <email@domain.example>
+郭凌宇 <1641510809@qq.com>
 FirstName LastName <email@domain.example>
 FirstName LastName <email@domain.example>
 
@@ -30,10 +30,22 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+ticks_blocked是线程结构体struct thread里的一个新的成员变量。它标志着这个线程还需要被阻塞的时间。
+struct thread
+{
+  int64_t blocked_ticks;              /* Number of ticks thread blocks */
+};
+
+blocked_time_check (struct thread *t)是在thread.h中声明的一个新的成员函数，并在thread.c中实现。它检查一个线程的ticks_blocked成员，并判断是否应当将这个线程重新放回空闲队列中。
+void blocked_time_check (struct thread *t);
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
+
+timer_sleep(int64_t ticks)会使当前线程进入阻塞状态，直到ticks次系统时间中断之后重新使进程进入等待状态。timer_sleep()被调用时，CPU应当处于可以被中断的状态。
+timer_sleep(int64_t ticks)将当前线程结构体里的ticks_blocked的值修改为函数参数ticks，然后阻塞当前线程。在时间中断函数中添加对于所有线程的ticks_blocked值的判断和修改，使得每次时间中断函数time_interrupt()发生时，对所有当前线程的timer_blocked成员进行自减1的操作，如果timer_blocked成员变成了0，就把该线程放入空闲队列中，等待schedule()函数的调度。
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
@@ -43,6 +55,7 @@ FirstName LastName <email@domain.example>
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
+由于timer_sleep()函数中涉及到时间中断函数timer_interrupt()，因此在调用timer_sleep()之前都应该保证当前的中断应当被允许，代码中使用断言来保证这一点。中断会在timer_sleep()函数开始时被禁止，这样在调用线程调度函数schedule()进行上下文切换的时候，其他线程对于timer_sleep()会停在对于中断断言的地方。当前线程被挂起、寄存器的值被存储在线程栈上，并且下一个调度的线程状态已经被恢复之后，中断重新被允许，其他线程可以调用timer_sleep()。
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
 
@@ -51,6 +64,7 @@ FirstName LastName <email@domain.example>
 >> A6: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
 
+该算法相比于原算法有着显而易见的优点。原算法不断地当前线程放入空闲队列当中，无意义的调用schedule()，将长时间的占用CPU资源(特别是当前空闲的线程较少时)。而当前算法将线程设置成阻塞状态，在每次时间中断函数中修改并检查线程是否应当被唤醒，CPU将不必进行没有意义的上下文切换，schedule()的调度将只会涉及处于空闲队列中的线程，而阻塞线程并不在其中。
              PRIORITY SCHEDULING
              ===================
 
