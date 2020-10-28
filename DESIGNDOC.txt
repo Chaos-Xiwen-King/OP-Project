@@ -30,13 +30,13 @@ FirstName LastName <email@domain.example>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-ticks_blocked是线程结构体struct thread里的一个新的成员变量。它标志着这个线程还需要被阻塞的时间。
+blocked_ticks是线程结构体struct thread里的一个新的成员变量。它标志着这个线程还需要被阻塞的时间。
 struct thread
 {
   int64_t blocked_ticks;              /* Number of ticks thread blocks */
 };
 
-blocked_time_check (struct thread *t)是在thread.h中声明的一个新的成员函数，并在thread.c中实现。它检查一个线程的ticks_blocked成员，并判断是否应当将这个线程重新放回空闲队列中。
+blocked_time_check (struct thread *t)是在thread.h中声明的一个新的成员函数，并在thread.c中实现。它检查一个线程的blocked_ticks成员，并判断是否应当将这个线程重新放回空闲队列中。
 void blocked_time_check (struct thread *t);
 
 ---- ALGORITHMS ----
@@ -45,7 +45,7 @@ void blocked_time_check (struct thread *t);
 >> including the effects of the timer interrupt handler.
 
 timer_sleep(int64_t ticks)会使当前线程进入阻塞状态，直到ticks次系统时间中断之后重新使进程进入等待状态。timer_sleep()被调用时，CPU应当处于可以被中断的状态。
-timer_sleep(int64_t ticks)将当前线程结构体里的ticks_blocked的值修改为函数参数ticks，然后阻塞当前线程。在时间中断函数中添加对于所有线程的ticks_blocked值的判断和修改，使得每次时间中断函数time_interrupt()发生时，对所有当前线程的timer_blocked成员进行自减1的操作，如果timer_blocked成员变成了0，就把该线程放入空闲队列中，等待schedule()函数的调度。
+timer_sleep(int64_t ticks)将当前线程结构体里的blocked_ticks的值修改为函数参数ticks，然后阻塞当前线程。在时间中断函数中添加对于所有线程的blocked_ticks值的判断和修改，使得每次时间中断函数time_interrupt()发生时，对所有当前线程的timer_blocked成员进行自减1的操作，如果timer_blocked成员变成了0，就把该线程放入空闲队列中，等待schedule()函数的调度。
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
