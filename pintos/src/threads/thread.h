@@ -94,6 +94,7 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+    struct list_elem belem;              /* List element. */
 
     int init_priority;                  /* Priority when first being created. */
     struct list locks;                  /* Locks holden by thread. */
@@ -110,6 +111,7 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -147,9 +149,12 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-void blocked_time_check (struct thread *t);
 
+void each_blocked_time_check (void *aux);
+
+bool thread_block_time_priority_cmp (const struct list_elem *a, const struct list_elem *b);
 bool thread_priority_cmp (const struct list_elem *a, const struct list_elem *b);
+
 void thread_donate_priority (struct thread *t);
 void thread_update_priority (struct thread *t);
 void thread_lock_hold (struct lock *lock);

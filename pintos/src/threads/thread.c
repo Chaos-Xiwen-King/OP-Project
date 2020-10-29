@@ -11,7 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "threads/fixeed_point.h"
+#include "threads/fixed_point.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -26,6 +26,9 @@ fixed_t load_avg;
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
+
+/* List of processes in THREAD_BLOCKED state by timer_sleep(). */
+static struct list blocked_list;
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
@@ -95,7 +98,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
-
+  list_init (&blocked_list);
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -224,7 +227,11 @@ thread_block (void)
   ASSERT (!intr_context ());
   ASSERT (intr_get_level () == INTR_OFF);
 
-  thread_current ()->status = THREAD_BLOCKED;
+  struct thread *t = thread_current();
+  t->status = THREAD_BLOCKED;
+
+  if(t->blocked_ticks > 0)list_insert_ordered(&blocked_list, &t->belem, (list_less_func *) &thread_block_time_priority_cmp, NULL);
+  
   schedule ();
 }
 
@@ -233,9 +240,10 @@ thread_block (void)
    make the running thread ready.)
 
    This function does not preempt the running thread.  This can
-   be important: if the caller had disabled interrupts itself,
+   be impo0rtant: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
+
 void
 thread_unblock (struct thread *t) 
 {
@@ -245,11 +253,12 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
+  
   /*
   list_push_back (&ready_list, &t->elem);
   */
+ 
   list_insert_ordered(&ready_list, &t->elem, (list_less_func *) &thread_priority_cmp, NULL);
-
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -623,16 +632,34 @@ allocate_tid (void)
   return tid;
 }
 
+
 /* Check the timer of blocked threads. */
 void
-blocked_time_check (struct thread *t)
+each_blocked_time_check (void *aux)
 {
-  if (t->status == THREAD_BLOCKED && t->blocked_ticks > 0)
+  struct list_elem *e;
+  int64_t ticks = *((int64_t *)aux);
+  
+  ASSERT (intr_get_level () == INTR_OFF);
+/*thread_unblock() removes the thread from blocked_list, but does not affect the iteration of the for loop.
+But to be cautious, place the iteration of e before thread_unblock()*/
+  for (e = list_begin (&blocked_list); e != list_end (&blocked_list); )
     {
-      t->blocked_ticks --;
-      if (t->blocked_ticks == 0)
+      struct thread *t = list_entry (e, struct thread, belem);
+      if(t->blocked_ticks == ticks){
+	      list_pop_front(&blocked_list);	
+	      e = list_next (e);      
         thread_unblock(t);
+      }
+      else break;
     }
+}
+
+/*Compare the blocked time between two threads. */
+bool
+thread_block_time_priority_cmp(const struct list_elem *a, const struct list_elem *b)
+{
+  return list_entry (a, struct thread, belem)->blocked_ticks < list_entry (b, struct thread, belem)->blocked_ticks;
 }
 
 /* Compare the priority between two threads. */
@@ -652,7 +679,7 @@ thread_donate_priority (struct thread *t)
   if (t->status == THREAD_READY)
   {
     list_remove(&t->elem);
-    list_insert_ordered (&ready_list, &t->elem, thread_priority_cmp, NULL);
+    list_insert_ordered (&ready_list, &t->elem, (list_less_func *)&thread_priority_cmp, NULL);
   }
 
   intr_set_level (old_level);
@@ -684,7 +711,7 @@ thread_lock_hold (struct lock *lock)
 {
   enum intr_level old_level = intr_disable();
   struct thread *cur = thread_current ();
-  list_insert_ordered (&cur->locks, &lock->elem, lock_priority_cmp, NULL);
+  list_insert_ordered (&cur->locks, &lock->elem, (list_less_func *)&lock_priority_cmp, NULL);
 
   if (lock->max_priority > cur->priority)
   {
