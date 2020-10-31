@@ -84,7 +84,7 @@ timer_sleep(int64_t ticks) 将当前线程结构体里的 ticks_blocked 的值�
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
-thread数据结构加入以下成员
+thread 数据结构加入以下成员
    /* 保存在未接受捐赠之前线程的优先级*/
    int init_priority;                 
    /* 保存线程所持有的所有锁 */
@@ -93,8 +93,9 @@ thread数据结构加入以下成员
    struct lock *lock_waiting;      
 
 
-lock数据结构加入以下成员
-   struct list_elem elem;             /*持有这个锁的所有线程 */
+lock 数据结构加入以下成员
+   /*持有这个锁的所有线程 */
+   struct list_elem elem;
    /*所有持有该锁线程中的最大优先级*/
    int max_priority;
 
@@ -138,9 +139,9 @@ Step 1: At the beginning:
 | member            | value                         |
 +-------------------+-------------------------------+
 | priority          |                            31 |
-| init_priority |                            31 |
-| locks             | {lock_1 (max_priority = -1)} |
-| lock_waiting   | NULL                          |
+| init_priority     |                            31 |
+| locks             |  {lock_1 (max_priority = -1)} |
+| lock_waiting      |                          NULL |
 '-------------------+-------------------------------'
 .---------------------------------------------------.
 |                Thread B (Beginning)               |
@@ -148,9 +149,9 @@ Step 1: At the beginning:
 | member            | value                         |
 +-------------------+-------------------------------+
 | priority          |                            32 |
-| init_priority |                            32 |
-| locks             | {lock_2 (max_priority = -1)} |
-| lock_waiting   | NULL                          |
+| init_priority     |                            32 |
+| locks             |  {lock_2 (max_priority = -1)} |
+| lock_waiting      |                          NULL |
 '-------------------+-------------------------------'
 .---------------------------.
 |    Thread C (Beginning)   |
@@ -158,9 +159,9 @@ Step 1: At the beginning:
 | member            | value |
 +-------------------+-------+
 | priority          |    33 |
-| init_priority |    33 |
-| locks             | {}    |
-| lock_waiting   | NULL  |
+| init_priority     |    33 |
+| locks             |    {} |
+| lock_waiting      |  NULL |
 '-------------------+-------'
 ==================================================================
 
@@ -172,9 +173,9 @@ Step 2: B acquires lock_1:
 | member            | value                         |
 +-------------------+-------------------------------+
 | priority          |                            32 |
-| init_priority |                            31 |
+| init_priority     |                            31 |
 | locks             | {lock_1 (priority_lock = 32)} |
-| lock_waiting   | NULL                          |
+| lock_waiting      |                          NULL |
 '-------------------+-------------------------------'
 .---------------------------------------------------.
 |              Thread B (B acquires L1)             |
@@ -182,9 +183,9 @@ Step 2: B acquires lock_1:
 | member            | value                         |
 +-------------------+-------------------------------+
 | priority          |                            32 |
-| init_priority |                            32 |
+| init_priority     |                            32 |
 | locks             | {lock_2 (priority_lock = -1)} |
-| lock_waiting   | &lock1                        |
+| lock_waiting      |                        &lock1 |
 '-------------------+-------------------------------'
 .---------------------------.
 |  Thread C (B acquires L1) |
@@ -192,9 +193,9 @@ Step 2: B acquires lock_1:
 | member            | value |
 +-------------------+-------+
 | priority          |    33 |
-| init_priority |    33 |
-| locks             | {}    |
-| lock_waiting   | NULL  |
+| init_priority     |    33 |
+| locks             |    {} |
+| lock_waiting      |  NULL |
 '-------------------+-------'
 ==================================================================
 
@@ -206,9 +207,9 @@ STEP 3-1: C acquires lock_2:
 | member            | value                         |
 +-------------------+-------------------------------+
 | priority          |                            33 |
-| init_priority |                            32 |
+| init_priority     |                            32 |
 | locks             | {lock_2 (priority_lock = 33)} |
-| lock_waiting   | &lock1                        |
+| lock_waiting      |                        &lock1 |
 '-------------------+-------------------------------'
 .----------------------------------.
 | Thread C (C acquires L2, Step 1) |
@@ -216,9 +217,9 @@ STEP 3-1: C acquires lock_2:
 | member               | value     |
 +----------------------+-----------+
 | priority             |        33 |
-| init_priority    |        33 |
-| locks                | {}        |
-| lock_waiting    | &lock_2   |
+| init_priority        |        33 |
+| locks                |        {} |
+| lock_waiting         |   &lock_2 |
 '----------------------+-----------'
 .---------------------------------------------------.
 |          Thread A (C acquires L2, Step 1)         |
@@ -226,9 +227,9 @@ STEP 3-1: C acquires lock_2:
 | member            | value                         |
 +-------------------+-------------------------------+
 | priority          |                            32 |
-| init_priorityl |                            31 |
+| init_priorityl    |                            31 |
 | locks             | {lock_1 (priority_lock = 32)} |
-| lock_waiting   | NULL                          |
+| lock_waiting      |                          NULL |
 '-------------------+-------------------------------'
 ==================================================================
 
@@ -240,9 +241,9 @@ STEP 3-2: C acquires lock_2:
 | member            | value                         |
 +-------------------+-------------------------------+
 | priority          |                            33 |
-| init_priority |                            32 |
+| init_priority     |                            32 |
 | locks             | {lock_2 (priority_lock = 33)} |
-| lock_waiting   | &lock1                        |
+| lock_waiting      |                        &lock1 |
 '-------------------+-------------------------------'
 .----------------------------------.
 | Thread C (C acquires L2, Step 2) |
@@ -250,9 +251,9 @@ STEP 3-2: C acquires lock_2:
 | member               | value     |
 +----------------------+-----------+
 | priority             |        33 |
-| init_priority    |        33 |
-| locks                | {}        |
-| lock_waiting     | &lock_2   |
+| init_priority        |        33 |
+| locks                |        {} |
+| lock_waiting         |   &lock_2 |
 '----------------------+-----------'
 .---------------------------------------------------.
 |          Thread A (C acquires L2, Step 2)         |
@@ -260,9 +261,9 @@ STEP 3-2: C acquires lock_2:
 | member            | value                         |
 +-------------------+-------------------------------+
 | priority          |                            33 |
-| init_priority |                            31 |
+| init_priority     |                            31 |
 | locks             | {lock_1 (priority_lock = 32)} |
-| lock_waiting   | NULL                          |
+| lock_waiting      |                          NULL |
 '-------------------+-------------------------------'
 ==================================================================
 
@@ -274,9 +275,9 @@ STEP 4: A releases lock_1:
 | member              | value   |
 +---------------------+---------+
 | priority            |      31 |
-| init_priority   |      31 |
-| locks               | {}      |
-| lock_waiting    | NULL    |
+| init_priority       |      31 |
+| locks               |      {} |
+| lock_waiting        |    NULL |
 '---------------------+---------'
 .----------------------------------------------------.
 |            Thread B (A releases lock_1)            |
@@ -284,10 +285,10 @@ STEP 4: A releases lock_1:
 | member            | value                          |
 +-------------------+--------------------------------+
 | priority          |                             33 |
-| init_priority |                             32 |
+| init_priority     |                             32 |
 | locks             | {&lock_2 (priority_lock = 33), |
 |                   |  &lock_1 (priority_lock = 32)} |
-| lock_waiting   | NULL                           |
+| lock_waiting      |                           NULL |
 '-------------------+--------------------------------'
 .------------------------------.
 | Thread C (A releases lock_1) |
@@ -295,9 +296,9 @@ STEP 4: A releases lock_1:
 | member             | value   |
 +--------------------+---------+
 | priority           |      33 |
-| init_priority  |      33 |
-| locks              | {}      |
-| lock_waiting   | &lock_2 |
+| init_priority      |      33 |
+| locks              |      {} |
+| lock_waiting       | &lock_2 |
 '--------------------+---------'
 ==================================================================
 
@@ -309,9 +310,9 @@ STEP 5: B releases lock_2:
 | member              | value   |
 +---------------------+---------+
 | priority            |      31 |
-| init_priority  |      31 |
-| locks               | {}      |
-| lock_waiting   | NULL    |
+| init_priority       |      31 |
+| locks               |      {} |
+| lock_waiting        |    NULL |
 '---------------------+---------'
 .----------------------------------------------------.
 |            Thread B (B releases lock_2)            |
@@ -319,9 +320,9 @@ STEP 5: B releases lock_2:
 | member            | value                          |
 +-------------------+--------------------------------+
 | priority          |                             32 |
-| init_priority |                             32 |
+| init_priority     |                             32 |
 | locks             | {&lock_1 (priority_lock = 32)} |
-| lock_waiting  | NULL                           |
+| lock_waiting      |                           NULL |
 '-------------------+--------------------------------'
 .----------------------------------------------------.
 |            Thread C (B releases lock_2)            |
@@ -329,9 +330,9 @@ STEP 5: B releases lock_2:
 | member            | value                          |
 +-------------------+--------------------------------+
 | priority          |                             33 |
-| init_priority |                             33 |
+| init_priority     |                             33 |
 | locks             | {&lock_2 (priority_lock = 33)} |
-| lock_waiting   | NULL                           |
+| lock_waiting      |                           NULL |
 '-------------------+--------------------------------'
 ==================================================================
 
