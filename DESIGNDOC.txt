@@ -1,7 +1,7 @@
             +---------------------------------+
-            |        	    CS 140            |
-            | PROJECT 1: THREADS              |
-            |   DESIGN DOCUMENT               |
+            |        	  CS 140              |
+            |       PROJECT 1: THREADS        |
+            |         DESIGN DOCUMENT         |
             +---------------------------------+
 
 ---- GROUP ----
@@ -21,13 +21,16 @@
 >> Please cite any offline or online sources you consulted while
 >> preparing your submission, other than the Pintos documentation, course
 >> text, lecture notes, and course staff.
+
 * 参考他人的实现方式
 https://www.cnblogs.com/laiy/p/pintos_project1_thread.html
 * 忙碌等待
 https://baike.baidu.com/item/忙碌等待/16256157?fr=aladdin
 
+
                  ALARM CLOCK
                  ===========
+
 
 ---- DATA STRUCTURES ----
 
@@ -37,22 +40,23 @@ https://baike.baidu.com/item/忙碌等待/16256157?fr=aladdin
 
 /* blocked_ticks 是线程结构体 struct thread 里的一个新的成员变量。它标志着这个线程还需要被阻塞的时间。 */
 /* belem 是线程结构体 struct thread 里的一个新的成员变量。它用于形成因调用timer_sleep()而阻塞的线程链表。 */
-struct thread
-{
-  int64_t blocked_ticks;              /* 因调用timer_sleep()而阻塞的线程，其结束阻塞的绝对时间 */
-  struct list_elem belem;              /* 因调用timer_sleep()阻塞的线程链表 */
-};
+ struct thread
+ {
+   int64_t blocked_ticks;              /* 因调用timer_sleep()而阻塞的线程，其结束阻塞的绝对时间 */
+   struct list_elem belem;              /* 因调用timer_sleep()阻塞的线程链表 */
+ };
 
 /* 
-  each_blocked_time_check() 是在thread.h中声明的一个新的成员函数，并在 thread.c 中实现。它以系统运行时间 ticks 作为参数，检查阻塞线程链表的 ticks_blocked 成员，并判断是否应当将这个线程重新放回空闲队列中。 
+  each_blocked_time_check() 是在thread.h中声明的一个新的成员函数，并在 thread.c 中实现。
+  它以系统运行时间 ticks 作为参数，检查阻塞线程链表的 ticks_blocked 成员，并判断是否应当将这个线程重新放回空闲队列中。
 */
-void each_blocked_time_check (void *aux);
+ void each_blocked_time_check (void *aux);
 
 /*
-  thread_block_time_priority_cmp() 是在thread.h中声明的一个新的成员函数，并在thread.c中实现。它作为比较函数，规定了阻塞线程插入链表时按照 blocked_ticks 参数从小到大的顺序。
+  thread_block_time_priority_cmp() 是在thread.h中声明的一个新的成员函数，并在thread.c中实现。
+  它作为比较函数，规定了阻塞线程插入链表时按照 blocked_ticks 参数从小到大的顺序。
 */
-bool thread_block_time_priority_cmp (const struct list_elem *a, const struct list_elem *b);
-
+ bool thread_block_time_priority_cmp (const struct list_elem *a, const struct list_elem *b);
 
 
 ---- ALGORITHMS ----
@@ -61,17 +65,24 @@ bool thread_block_time_priority_cmp (const struct list_elem *a, const struct lis
 >> including the effects of the timer interrupt handler.
 
 timer_sleep(int64_t tick) 会使当前线程进入阻塞状态，直到 ticks 次系统时间中断之后重新使进程进入等待状态。timer_sleep() 被调用时，CPU应当处于可以被中断的状态。
-timer_sleep(int64_t tick) 将当前线程结构体里的 blocked_ticks 的值修改为 tick + ticks，并将当前线程放入阻塞队列中，然后阻塞当前线程。在时间中断函数中添加对于所有线程的 blocked_ticks 值的判断，使得每次时间中断函数 time_interrupt() 发生时，如果 blocked_ticks 成员等于当前的 ticks，就把该线程放入空闲队列中，等待 schedule() 函数的调度，并从阻塞队列中删除该线程。
+timer_sleep(int64_t tick) 将当前线程结构体里的 blocked_ticks 的值修改为 tick + ticks，并将当前线程放入阻塞队列中，然后阻塞当前线程。
+在时间中断函数中添加对于所有线程的 blocked_ticks 值的判断，使得每次时间中断函数 time_interrupt() 发生时，如果 blocked_ticks 成员等于当前的 ticks，就把该线程放入空闲队列中，等待 schedule() 函数的调度，并从阻塞队列中删除该线程。
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
-建立了一个新的阻塞链表，其中包括所有因为调用 timer_sleep() 而进入阻塞状态的线程。在时间中断中遍历阻塞列表线程的 blocked_ticks 成员，碰到第一个大于 ticks 的线程时跳出，并将之前的线程放入等待队列中，并在阻塞队列中删除。（这些线程的 blocked_ticks 应当等于 ticks）
+
+建立了一个新的阻塞链表，其中包括所有因为调用 timer_sleep() 而进入阻塞状态的线程。
+在时间中断中遍历阻塞列表线程的 blocked_ticks 成员，碰到第一个大于 ticks 的线程时跳出，并将之前的线程放入等待队列中，并在阻塞队列中删除。
+（这些线程的 blocked_ticks 应当等于 ticks）
+
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
-由于 timer_sleep() 函数中涉及到计时中断函数 timer_interrupt()，因此在调用 timer_sleep() 之前都应该保证当前的中断应当被允许，代码中使用断言来保证这一点。中断会在 timer_sleep() 函数开始时被禁止，这样在调用线程调度函数 schedule() 进行上下文切换的时候，其他线程对于 timer_sleep() 会停在对于中断断言的地方。当前线程被挂起、寄存器的值被存储在线程栈上，并且下一个调度的线程状态已经被恢复之后，中断重新被允许，其他线程可以调用 timer_sleep()。
+由于 timer_sleep() 函数中涉及到计时中断函数 timer_interrupt()，因此在调用 timer_sleep() 之前都应该保证当前的中断应当被允许，代码中使用断言来保证这一点。
+中断会在 timer_sleep() 函数开始时被禁止，这样在调用线程调度函数 schedule() 进行上下文切换的时候，其他线程对于 timer_sleep() 会停在对于中断断言的地方。
+当前线程被挂起、寄存器的值被存储在线程栈上，并且下一个调度的线程状态已经被恢复之后，中断重新被允许，其他线程可以调用 timer_sleep()。
 
 >> A5: How are race conditions avoided when a timer interrupt occurs
 >> during a call to timer_sleep()?
@@ -85,15 +96,18 @@ timer_sleep(int64_t tick) 将当前线程结构体里的 blocked_ticks 的值修
 
 该算法相比于原算法有着显而易见的优点。原算法不断地当前线程放入空闲队列当中，无意义的调用 schedule()，将长时间的占用CPU资源(特别是当前空闲的线程较少时)。而当前算法将线程设置成阻塞状态，在每次时间中断函数中修改并检查线程是否应当被唤醒，CPU将不必进行没有意义的上下文切换，schedule() 的调度将只会涉及处于空闲队列中的线程，而阻塞线程并不在其中。
 
+
              PRIORITY SCHEDULING
              ===================
+
 
 ---- DATA STRUCTURES ----
 
 >> B1: Copy here the declaration of each new or changed `struct' or
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
-thread 数据结构加入以下成员
+
+thread 数据结构加入以下成员:
    /* 保存在未接受捐赠之前线程的优先级*/
    int init_priority;                 
    /* 保存线程所持有的所有锁 */
@@ -102,16 +116,16 @@ thread 数据结构加入以下成员
    struct lock *lock_waiting;      
 
 
-lock 数据结构加入以下成员
+lock 数据结构加入以下成员:
    /*持有这个锁的所有线程 */
    struct list_elem elem;
    /*所有持有该锁线程中的最大优先级*/
    int max_priority;
 
-
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
 >> .png file.)
+
 为了解决这个问题，我们在thread数据结构中加入init_priority, locks, lock_waiting, 
 在lock数据结构中加入elem, max_priority成员来帮助跟踪优先级贡献。
 
@@ -135,7 +149,7 @@ lock 数据结构加入以下成员
 
 使用数据结构和上面的算法，优先级捐赠就能够实现。
 
-举一个例子
+举一个例子:
 A thread, priority 31, has lock lock_1. 
 B thread, priority 32, has lock lock_2, and acquire lock_1
 C thread, priority 33, acquire lock_2 
@@ -350,11 +364,12 @@ STEP 5: B releases lock_2:
 
 >> B3: How do you ensure that the highest priority thread waiting for
 >> a lock, semaphore, or condition variable wakes up first?
-将等待队列实现为优先队列，按照线程优先级的大小降序排列。
 
+将等待队列实现为优先队列，按照线程优先级的大小降序排列。
 
 >> B4: Describe the sequence of events when a call to lock_acquire()
 >> causes a priority donation.  How is nested donation handled?
+
 A: 步骤:
    1. 屏蔽中断。
    2. 捐献
@@ -378,6 +393,7 @@ A: 步骤:
 
 >> B5: Describe the sequence of events when lock_release() is called
 >> on a lock that a higher-priority thread is waiting for.
+
 A: 步骤:
    1. 保证这个线程是当前锁的持有者，如果不是，输出错误。
    2. 屏蔽中断。
@@ -406,8 +422,25 @@ A: 步骤:
 我们不让中断在执行函数时发生。不能够用一个锁防止中断的发生，因为我们没有提供方法让
 一个线程和它的捐献者共享一个锁。如果我们对线程加一个锁，锁可能会被禁止使用。
 
-ADVANCED SCHEDULER
-==================
+---- RATIONALE ----
+
+>> B7: Why did you choose this design?  In what ways is it superior to
+>> another design you considered?
+
+在设计方案的时候，我们采用的是TDD方式，在分析了所有测试代码的意图之后，我们决定设计上述的数据结构，
+并依照数据结构确定了解决方案。
+
+thread 结构体必须要记录自身原本的优先级和被捐赠的优先级，刚开始我们打算记录下所有捐赠给该线程的优先级，维护一个存储优先级的数组，
+但这种方法不切实际，无法得知优先级的捐赠者，进而发现只需要记录自身原本的优先级和当前的优先级即可，当优先级改变时只需要借助函数方法及时更新即可。
+除此之外，thread 结构体还要记录自身等待的锁以及所有自身持有的锁。
+
+lock 结构体需要记录所有等待在这个锁上的线程。原本在设计时，我们没有打算在该结构体中记录锁的最大优先级。
+然而，在多个线程准备获取锁的时候，事先记录下等待锁的线程中的最大优先级能够避免遍历一遍等待该锁的线程队列以判断是否要捐赠优先级，故而添加了该数据结构。
+
+
+              ADVANCED SCHEDULER
+              ==================
+
 
 ---- DATA STRUCTURES ----
 
