@@ -36,27 +36,36 @@ https://baike.baidu.com/item/忙碌等待/16256157?fr=aladdin
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
 /* blocked_ticks 是线程结构体 struct thread 里的一个新的成员变量。它标志着这个线程还需要被阻塞的时间。 */
+/* belem 是线程结构体 struct thread 里的一个新的成员变量。它用于形成因调用timer_sleep()而阻塞的线程链表。 */
 struct thread
 {
-  int64_t blocked_ticks;              /* Number of ticks thread blocks */
+  int64_t blocked_ticks;              /* 因调用timer_sleep()而阻塞的线程，其结束阻塞的绝对时间 */
+  struct list_elem belem;              /* 因调用timer_sleep()阻塞的线程链表 */
 };
 
 /* 
-  blocked_time_check (struct thread *t) 是在thread.h中声明的一个新的成员函数，并在 thread.c 中实现。它检查一个线程的 ticks_blocked 成员，并判断是否应当将这个线程重新放回空闲队列中。 
+  each_blocked_time_check() 是在thread.h中声明的一个新的成员函数，并在 thread.c 中实现。它以系统运行时间 ticks 作为参数，检查阻塞线程链表的 ticks_blocked 成员，并判断是否应当将这个线程重新放回空闲队列中。 
 */
-void blocked_time_check (struct thread *t);
+void each_blocked_time_check (void *aux);
+
+/*
+  thread_block_time_priority_cmp() 是在thread.h中声明的一个新的成员函数，并在thread.c中实现。它作为比较函数，规定了阻塞线程插入链表时按照 blocked_ticks 参数从小到大的顺序。
+*/
+bool thread_block_time_priority_cmp (const struct list_elem *a, const struct list_elem *b);
+
+
 
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
-timer_sleep(int64_t ticks) 会使当前线程进入阻塞状态，直到 ticks 次系统时间中断之后重新使进程进入等待状态。timer_sleep() 被调用时，CPU应当处于可以被中断的状态。
-timer_sleep(int64_t ticks) 将当前线程结构体里的 ticks_blocked 的值修改为函数参数 ticks，然后阻塞当前线程。在时间中断函数中添加对于所有线程的 ticks_blocked 值的判断和修改，使得每次时间中断函数 time_interrupt() 发生时，对所有当前线程的 timer_blocked 成员进行自减1的操作，如果 timer_blocked 成员变成了0，就把该线程放入空闲队列中，等待 schedule() 函数的调度。
+timer_sleep(int64_t tick) 会使当前线程进入阻塞状态，直到 ticks 次系统时间中断之后重新使进程进入等待状态。timer_sleep() 被调用时，CPU应当处于可以被中断的状态。
+timer_sleep(int64_t tick) 将当前线程结构体里的 blocked_ticks 的值修改为 tick + ticks，并将当前线程放入阻塞队列中，然后阻塞当前线程。在时间中断函数中添加对于所有线程的 blocked_ticks 值的判断，使得每次时间中断函数 time_interrupt() 发生时，如果 blocked_ticks 成员等于当前的 ticks，就把该线程放入空闲队列中，等待 schedule() 函数的调度，并从阻塞队列中删除该线程。
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
-
+建立了一个新的阻塞链表，其中包括所有因为调用 timer_sleep() 而进入阻塞状态的线程。在时间中断中遍历阻塞列表线程的 blocked_ticks 成员，碰到第一个大于 ticks 的线程时跳出，并将之前的线程放入等待队列中，并在阻塞队列中删除。（这些线程的 blocked_ticks 应当等于 ticks）
 ---- SYNCHRONIZATION ----
 
 >> A4: How are race conditions avoided when multiple threads call
