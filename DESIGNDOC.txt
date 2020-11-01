@@ -58,7 +58,6 @@ https://baike.baidu.com/item/忙碌等待/16256157?fr=aladdin
 */
  bool thread_block_time_priority_cmp (const struct list_elem *a, const struct list_elem *b);
 
-
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
@@ -359,7 +358,6 @@ STEP 5: B releases lock_2:
 '-------------------+--------------------------------'
 ==================================================================
 
-
 ---- ALGORITHMS ----
 
 >> B3: How do you ensure that the highest priority thread waiting for
@@ -447,19 +445,18 @@ lock 结构体需要记录所有等待在这个锁上的线程。原本在设计
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-/*给每个线程一个nice参数和一个recent_cpu参数，供后续重新计算线程的优先级以实现mlfqs。*/
+/* 给每个线程一个nice参数和一个recent_cpu参数，供后续重新计算线程的优先级以实现mlfqs。*/
 struct thread中添加
 {
 	int nice;               /* Nice parameter. */
 	fixed_t recent_cpu;        /* CPU time occupied by the thread. */
 }
 
-/*在thread.c中添加变量,用于计算优先级的参数*/
+/* 在thread.c中添加变量,用于计算优先级的参数*/
 fixed_t load_avg;
 
-/*在fixed_point.h中定义*/
+/* 在fixed_point.h中定义*/
 typedef int fixed_t;
-
 
 ---- ALGORITHMS ----
 
@@ -525,27 +522,3 @@ recent_cpu是不准确的。
 1、recent_cpu和load_avg的运算需要浮点数运算来实现。
 2、比起函数，使用宏定义更加简明。
 3、所需功能较为简单，宏定义可以实现。
-
-               SURVEY QUESTIONS
-               ================
-
-Answering these questions is optional, but it will help us improve the
-course in future quarters.  Feel free to tell us anything you
-want--these questions are just to spur your thoughts.  You may also
-choose to respond anonymously in the course evaluations at the end of
-the quarter.
-
->> In your opinion, was this assignment, or any one of the three problems
->> in it, too easy or too hard?  Did it take too long or too little time?
-
->> Did you find that working on a particular part of the assignment gave
->> you greater insight into some aspect of OS design?
-
->> Is there some particular fact or hint we should give students in
->> future quarters to help them solve the problems?  Conversely, did you
->> find any of our guidance to be misleading?
-
->> Do you have any suggestions for the TAs to more effectively assist
->> students, either for future quarters or the remaining projects?
-
->> Any other comments?
